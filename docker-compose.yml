@@ -8,30 +8,68 @@ services:
       dockerfile: Dockerfile
     container_name: market-maven
     environment:
+      # Core environment
       - ENVIRONMENT=production
+      - DEBUG=false
+      
+      # API Keys
       - ALPHA_VANTAGE_API_KEY=${ALPHA_VANTAGE_API_KEY}
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
-      - ENABLE_DRY_RUN=false
-      - LOG_LEVEL=INFO
-      - METRICS_PORT=8000
-      - REDIS_URL=redis://redis:6379
+      
+      # Database
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=${POSTGRES_DB:-marketmaven}
+      - POSTGRES_USER=${POSTGRES_USER:-marketmaven}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-marketmaven_password}
       - DATABASE_URL=postgresql://marketmaven:marketmaven_password@postgres:5432/marketmaven
+      
+      # Redis
+      - REDIS_URL=redis://redis:6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+      - REDIS_DB=0
+      
+      # Trading
+      - ENABLE_DRY_RUN=false
+      - MAX_POSITION_SIZE=1000
+      - STOP_LOSS_PERCENTAGE=0.05
+      - TAKE_PROFIT_PERCENTAGE=0.10
+      
+      # Security
+      - ENCRYPT_SENSITIVE_DATA=true
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - ENABLE_RATE_LIMITING=true
+      
+      # Logging
+      - LOG_LEVEL=INFO
+      - JSON_LOGS=true
+      - ENABLE_CORRELATION_IDS=true
+      
+      # Metrics
+      - ENABLE_METRICS=true
+      - METRICS_PORT=8000
+      - HEALTH_CHECK_INTERVAL=30
     ports:
       - "8000:8000"
+      - "8001:8001"  # Additional port for metrics
     volumes:
       - ./logs:/app/logs
       - ./data:/app/data
+      - ./backups:/app/backups
     networks:
       - market-maven-network
     depends_on:
-      - redis
-      - postgres
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD", "python", "-c", "import market_maven; print('Health check passed')"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
+    restart: unless-stopped
 
   # Prometheus for metrics collection
   prometheus:
@@ -71,8 +109,17 @@ services:
     container_name: market-maven-redis
     ports:
       - "6379:6379"
+    volumes:
+      - redis_data:/data
     networks:
       - market-maven-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
 
   # PostgreSQL for data storage
   postgres:
@@ -82,12 +129,21 @@ services:
       - POSTGRES_DB=${POSTGRES_DB:-marketmaven}
       - POSTGRES_USER=${POSTGRES_USER:-marketmaven}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-marketmaven_password}
+      - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --lc-collate=C --lc-ctype=C
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./sql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     networks:
       - market-maven-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-marketmaven} -d ${POSTGRES_DB:-marketmaven}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    shm_size: 256mb
 
   # Nginx reverse proxy
   nginx:
@@ -109,4 +165,5 @@ networks:
 volumes:
   prometheus_data:
   grafana_data:
-  postgres_data: 
+  postgres_data:
+  redis_data: 
