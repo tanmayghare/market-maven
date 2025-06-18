@@ -243,7 +243,6 @@ local_settings.py
 dev_config.py
 
 # Machine learning models and data
-models/
 *.pkl
 *.pickle
 *.joblib
