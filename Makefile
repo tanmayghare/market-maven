@@ -110,12 +110,40 @@ monitor-start:
 monitor-stop:
 	docker-compose stop prometheus grafana
 
-# Database operations
-db-migrate:
-	python -m market_maven.cli db migrate
+# Database operations (new enhanced commands)
+db-init:
+	python -m market_maven.cli database init
 
-db-seed:
-	python -m market_maven.cli db seed
+db-init-force:
+	python -m market_maven.cli database init --force
+
+db-reset:
+	python -m market_maven.cli database reset
+
+db-status:
+	python -m market_maven.cli database status
+
+db-cleanup:
+	python -m market_maven.cli database cleanup
+
+db-cleanup-90d:
+	python -m market_maven.cli database cleanup --days 90
+
+# Alembic migrations
+db-migrate-create:
+	alembic revision --autogenerate -m "$(MSG)"
+
+db-migrate-up:
+	alembic upgrade head
+
+db-migrate-down:
+	alembic downgrade -1
+
+db-migrate-history:
+	alembic history
+
+db-migrate-current:
+	alembic current
 
 # Backup and restore
 backup:
@@ -156,11 +184,31 @@ docs-build:
 docs-serve:
 	python -m http.server 8080 -d docs/_build/
 
-# Database operations
-db-init:
+# API Server operations
+api-start:
+	python -m market_maven.api.main
+
+api-dev:
+	uvicorn market_maven.api.main:app --reload --host 0.0.0.0 --port 8000
+
+api-docs:
+	@echo "API documentation available at:"
+	@echo "  - Swagger UI: http://localhost:8000/docs"
+	@echo "  - ReDoc: http://localhost:8000/redoc"
+	@echo "  - OpenAPI JSON: http://localhost:8000/openapi.json"
+
+# Trading operations
+trade-test:
+	python -m tests.integration.test_ibapi_integration
+
+trade-dry-run:
+	python -m market_maven.cli trade AAPL BUY 10 --dry-run
+
+# Legacy database operations (use new db-* commands instead)
+db-legacy-init:
 	python -c "from market_maven.core.database import create_tables; import asyncio; asyncio.run(create_tables())"
 
-db-reset:
+db-legacy-reset:
 	python -c "from market_maven.core.database import drop_tables, create_tables; import asyncio; asyncio.run(drop_tables()); asyncio.run(create_tables())"
 
 # Cache operations
@@ -178,6 +226,74 @@ quickstart: setup db-init
 	@echo "MarketMaven is ready! Try these commands:"
 	@echo "  make dev-analyze    # Analyze a stock"
 	@echo "  make dev-run        # Start interactive mode"
+	@echo "  make api-dev        # Start API server in dev mode"
+	@echo "  make trade-test     # Test IBAPI integration"
+	@echo "  make db-status      # Check database status"
 	@echo "  make docker-run     # Run with Docker"
 	@echo "  make coverage       # Run tests with coverage"
-	@echo "  make perf-test      # Run performance tests" 
+
+# All-in-one development setup
+dev-setup: setup db-init
+	@echo "🚀 Starting complete development environment..."
+	@echo "1. Database initialized"
+	@echo "2. Starting API server in development mode..."
+	make api-dev &
+	@echo "3. API server starting at http://localhost:8000"
+	@echo "4. API docs available at http://localhost:8000/docs"
+	@echo ""
+	@echo "✅ Development environment ready!"
+
+# Production setup validation
+prod-check:
+	@echo "🔍 Running production readiness checks..."
+	make lint
+	make security
+	make test
+	make db-status
+	@echo "✅ Production checks complete!"
+
+# Enhanced help with new commands
+help-enhanced:
+	@echo "MarketMaven - AI Market Intelligence Agent"
+	@echo "=========================================="
+	@echo ""
+	@echo "🏗️  Setup Commands:"
+	@echo "  setup           Set up development environment"
+	@echo "  quickstart      Quick setup with database"
+	@echo "  dev-setup       Complete development environment"
+	@echo ""
+	@echo "🗄️  Database Commands:"
+	@echo "  db-init         Initialize database with tables and data"
+	@echo "  db-status       Check database health and status"
+	@echo "  db-reset        Reset database (DANGER: deletes all data)"
+	@echo "  db-cleanup      Clean up old data (30 days)"
+	@echo "  db-migrate-*    Alembic migration commands"
+	@echo ""
+	@echo "🌐 API Commands:"
+	@echo "  api-dev         Start API server in development mode"
+	@echo "  api-start       Start API server in production mode"
+	@echo "  api-docs        Show API documentation URLs"
+	@echo ""
+	@echo "💼 Trading Commands:"
+	@echo "  trade-test      Test Interactive Brokers integration"
+	@echo "  trade-dry-run   Execute a dry-run trade"
+	@echo ""
+	@echo "🧪 Development Commands:"
+	@echo "  dev-analyze     Analyze a stock (AAPL)"
+	@echo "  dev-run         Start interactive CLI mode"
+	@echo "  dev-health      Check system health"
+	@echo ""
+	@echo "🔍 Quality Assurance:"
+	@echo "  test           Run all tests"
+	@echo "  lint           Run code quality checks"
+	@echo "  security       Run security scans"
+	@echo "  coverage       Run tests with coverage report"
+	@echo ""
+	@echo "🐳 Docker Commands:"
+	@echo "  docker-build   Build Docker image"
+	@echo "  docker-run     Run with Docker Compose"
+	@echo "  docker-stop    Stop Docker services"
+	@echo ""
+	@echo "📊 Monitoring:"
+	@echo "  monitor-start  Start Prometheus/Grafana"
+	@echo "  prod-check     Run production readiness checks" 
