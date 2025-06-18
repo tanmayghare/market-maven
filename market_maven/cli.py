@@ -18,6 +18,7 @@ from rich.json import JSON
 from market_maven.config.settings import settings
 from market_maven.core.logging import setup_logging, get_logger
 from market_maven.core.metrics import metrics
+from market_maven.core.database_init import db_manager
 from market_maven.agents.market_maven import market_maven
 
 
@@ -420,6 +421,176 @@ def health() -> None:
 def config() -> None:
     """Display current configuration settings."""
     _display_settings()
+
+
+@cli.group()
+def database() -> None:
+    """Database management commands."""
+    pass
+
+
+@database.command()
+@click.option('--force', is_flag=True, help='Force initialization even if database exists')
+def init(force: bool) -> None:
+    """Initialize the database with all tables and initial data."""
+    
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console,
+        transient=True
+    ) as progress:
+        
+        task = progress.add_task("Initializing database...", total=None)
+        
+        try:
+            success = asyncio.run(db_manager.initialize_database(force=force))
+            progress.update(task, completed=True)
+            
+            if success:
+                console.print("[bold green]✅ Database initialized successfully[/bold green]")
+            else:
+                console.print("[bold red]❌ Database initialization failed[/bold red]")
+                sys.exit(1)
+                
+        except KeyboardInterrupt:
+            console.print("\n[yellow]⚠️  Database initialization interrupted[/yellow]")
+            sys.exit(1)
+        except Exception as e:
+            logger.error(f"Database initialization failed: {e}")
+            console.print(f"[bold red]❌ Unexpected error: {str(e)}[/bold red]")
+            sys.exit(1)
+
+
+@database.command()
+def reset() -> None:
+    """Reset the database by dropping and recreating all tables."""
+    
+    if not Confirm.ask(
+        "[bold red]⚠️  This will delete ALL data in the database. Are you sure?[/bold red]",
+        default=False
+    ):
+        console.print("[yellow]Database reset cancelled[/yellow]")
+        return
+    
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console,
+        transient=True
+    ) as progress:
+        
+        task = progress.add_task("Resetting database...", total=None)
+        
+        try:
+            success = asyncio.run(db_manager.reset_database())
+            progress.update(task, completed=True)
+            
+            if success:
+                console.print("[bold green]✅ Database reset successfully[/bold green]")
+            else:
+                console.print("[bold red]❌ Database reset failed[/bold red]")
+                sys.exit(1)
+                
+        except KeyboardInterrupt:
+            console.print("\n[yellow]⚠️  Database reset interrupted[/yellow]")
+            sys.exit(1)
+        except Exception as e:
+            logger.error(f"Database reset failed: {e}")
+            console.print(f"[bold red]❌ Unexpected error: {str(e)}[/bold red]")
+            sys.exit(1)
+
+
+@database.command()
+def status() -> None:
+    """Check database connection and health status."""
+    
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console,
+        transient=True
+    ) as progress:
+        
+        task = progress.add_task("Checking database status...", total=None)
+        
+        try:
+            health_result = db_manager.check_health()
+            schema_valid = asyncio.run(db_manager.validate_database_schema())
+            progress.update(task, completed=True)
+            
+            # Create status table
+            table = Table(title="Database Status", title_style="bold blue")
+            table.add_column("Component", style="cyan")
+            table.add_column("Status", justify="center")
+            table.add_column("Details", style="dim")
+            
+            # Connection status
+            if health_result["connected"]:
+                table.add_row("Connection", "[green]✅ Connected[/green]", "Database is accessible")
+            else:
+                table.add_row("Connection", "[red]❌ Disconnected[/red]", 
+                             health_result.get("error", "Cannot connect to database"))
+            
+            # Schema validation
+            if schema_valid:
+                table.add_row("Schema", "[green]✅ Valid[/green]", "All required tables exist")
+            else:
+                table.add_row("Schema", "[red]❌ Invalid[/red]", "Missing tables or schema issues")
+            
+            # Pool status (if available)
+            if "details" in health_result and health_result["details"]:
+                details = health_result["details"]
+                pool_info = f"Size: {details.get('pool_size', 0)}, " \
+                           f"In use: {details.get('pool_checked_out', 0)}, " \
+                           f"Available: {details.get('pool_checked_in', 0)}"
+                table.add_row("Connection Pool", "[blue]ℹ️  Active[/blue]", pool_info)
+            
+            console.print(table)
+            
+            # Overall status
+            if health_result["connected"] and schema_valid:
+                console.print("\n[bold green]🟢 Database is healthy and ready[/bold green]")
+            else:
+                console.print("\n[bold red]🔴 Database has issues that need attention[/bold red]")
+                sys.exit(1)
+                
+        except Exception as e:
+            logger.error(f"Database status check failed: {e}")
+            console.print(f"[bold red]❌ Status check failed: {str(e)}[/bold red]")
+            sys.exit(1)
+
+
+@database.command()
+@click.option('--days', type=int, default=30, help='Number of days of data to retain')
+def cleanup(days: int) -> None:
+    """Clean up old data from the database."""
+    
+    if not Confirm.ask(
+        f"This will delete data older than {days} days. Continue?",
+        default=True
+    ):
+        console.print("[yellow]Database cleanup cancelled[/yellow]")
+        return
+    
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console,
+        transient=True
+    ) as progress:
+        
+        task = progress.add_task(f"Cleaning up data older than {days} days...", total=None)
+        
+        try:
+            asyncio.run(db_manager.cleanup_old_data(days_to_keep=days))
+            progress.update(task, completed=True)
+            console.print(f"[bold green]✅ Database cleanup completed (kept {days} days of data)[/bold green]")
+            
+        except Exception as e:
+            logger.error(f"Database cleanup failed: {e}")
+            console.print(f"[bold red]❌ Cleanup failed: {str(e)}[/bold red]")
+            sys.exit(1)
 
 
 def _display_analysis_result(result: Dict[str, Any]) -> None:
