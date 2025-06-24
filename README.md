@@ -1,353 +1,150 @@
 # MarketMaven
 
-A production-grade AI-powered market intelligence agent built with Google's Agent Development Kit (ADK) and Gemini 2.0 Flash. This agent provides comprehensive stock analysis, investment recommendations, and automated trading capabilities with enterprise-level monitoring and risk management.
+An AI-powered stock market agent that provides intelligent stock analysis, investment recommendations, and automated trading capabilities using Google's Gemini 2.0 Flash model.
 
-## 🚀 Features
+## ✨ Features
 
-### Core Capabilities
-- **Comprehensive Stock Analysis**: Technical, fundamental, and sentiment analysis
-- **AI-Powered Recommendations**: Investment advice with confidence scoring
-- **Automated Trading**: Execute trades with proper risk management
-- **Real-time Data**: Live market data and historical analysis
-- **Risk Management**: Stop-loss, take-profit, and position sizing
-- **Portfolio Management**: Track positions and performance
+- **Smart Stock Analysis**: Technical, fundamental, and sentiment analysis
+- **AI Investment Recommendations**: Get investment advice with confidence scoring
+- **Automated Trading**: Execute trades with built-in risk management
+- **Real-time Market Data**: Access live and historical market data
+- **Portfolio Management**: Track your positions and performance
+- **Risk Management**: Automatic stop-loss and take-profit controls
 
-### Production Features
-- **Google ADK Integration**: Built on Google's Agent Development Kit
-- **Structured Logging**: JSON-formatted logs with correlation IDs
-- **Metrics & Monitoring**: Prometheus metrics and health checks
-- **Rate Limiting**: API rate limiting and retry logic
-- **Caching**: Intelligent data caching for performance
-- **Error Handling**: Comprehensive error handling and recovery
-- **Configuration Management**: Environment-based configuration
-- **CLI Interface**: Rich command-line interface with progress indicators
-
-## 🏗️ Architecture
-
-```
-market-maven/
-├── market_maven/
-│   ├── agents/           # ADK agents
-│   │   └── market_maven.py
-│   ├── tools/            # ADK tools
-│   │   ├── data_fetcher_tool.py
-│   │   ├── analyzer_tool.py
-│   │   └── trader_tool.py
-│   ├── core/             # Core utilities
-│   │   ├── exceptions.py
-│   │   ├── logging.py
-│   │   └── metrics.py
-│   ├── config/           # Configuration
-│   │   └── settings.py
-│   ├── models/           # Data models
-│   │   └── schemas.py
-│   └── cli.py           # CLI interface
-├── requirements.txt
-├── pyproject.toml
-└── README.md
-```
-
-## 🛠️ Installation
+## 🚀 Quick Start
 
 ### Prerequisites
+
 - Python 3.9+
-- Alpha Vantage API key
-- Google AI API key
-- Interactive Brokers TWS (for live trading)
-- Docker and Docker Compose (optional, for containerized deployment)
+- Alpha Vantage API key ([Get one free](https://www.alphavantage.co/support/#api-key))
+- Google AI API key ([Get started](https://ai.google.dev/))
+- Interactive Brokers account (for live trading)
 
-### Quick Start
+### Installation
 
-1. **Clone the repository**:
+1. **Clone and setup**:
    ```bash
    git clone <repository-url>
    cd market-maven
-   ```
-
-2. **Quick setup with Make**:
-   ```bash
-   make quickstart
-   ```
-
-3. **Manual setup**:
-   ```bash
-   # Install dependencies
    pip install -r requirements.txt
-   
-   # Set up environment
-   cp env.example .env
-   # Edit .env with your API keys and settings
-   
-   # Create necessary directories
-   mkdir -p logs data
    ```
 
-### Development Setup
+2. **Configure environment**:
+   ```bash
+   cp env.example .env
+   # Edit .env with your API keys
+   ```
 
-For development with all tools and pre-commit hooks:
+3. **Start using**:
+   ```bash
+   # Analyze a stock
+   python -m market_maven.cli analyze AAPL
 
+   # Quick analysis
+   python -m market_maven.cli quick-analysis AAPL
+
+   # Interactive mode
+   python -m market_maven.cli interactive
+   ```
+
+## 📊 Usage Examples
+
+### Stock Analysis
 ```bash
-make install-dev
-make setup
-```
-
-### Docker Setup
-
-For containerized deployment:
-
-```bash
-# Build and start all services
-docker-compose up -d
-
-# View logs
-docker-compose logs -f stock-agent
-
-# Stop services
-docker-compose down
-```
-
-## ⚙️ Configuration
-
-### Environment Variables
-
-| Variable | Description | Default | Required |
-|----------|-------------|---------|----------|
-| `ALPHA_VANTAGE_API_KEY` | Alpha Vantage API key | - | ✅ |
-| `GOOGLE_API_KEY` | Google AI API key | - | ✅ |
-| `ENVIRONMENT` | Environment (development/staging/production) | development | ❌ |
-| `ENABLE_DRY_RUN` | Enable dry-run mode for trading | true | ❌ |
-| `MAX_POSITION_SIZE` | Maximum shares per position | 100 | ❌ |
-| `LOG_LEVEL` | Logging level | INFO | ❌ |
-| `METRICS_PORT` | Prometheus metrics port | 8000 | ❌ |
-
-### Interactive Brokers Setup
-
-For live trading, configure Interactive Brokers TWS:
-
-1. Install and configure TWS
-2. Enable API connections in TWS settings
-3. Set the correct host, port, and client ID in your `.env` file
-
-## 🚀 Usage
-
-### Command Line Interface
-
-The agent provides a comprehensive CLI with multiple commands:
-
-#### Stock Analysis
-```bash
-# Comprehensive analysis
-python -m market_maven.cli analyze AAPL
+# Comprehensive analysis with custom parameters
+python -m market_maven.cli analyze AAPL --analysis-type comprehensive --risk-tolerance moderate
 
 # Technical analysis only
 python -m market_maven.cli analyze AAPL --analysis-type technical
 
-# Quick analysis
-python -m market_maven.cli quick AAPL
-
-# Custom risk tolerance and horizon
-python -m market_maven.cli analyze AAPL --risk-tolerance aggressive --investment-horizon long_term
+# Quick decision-making analysis
+python -m market_maven.cli quick-analysis TSLA
 ```
 
-#### Trading
+### Trading (Simulation Mode)
 ```bash
-# Market order (dry-run by default)
-python -m market_maven.cli trade AAPL BUY 10
+# Simulate a market buy order
+python -m market_maven.cli trade AAPL BUY 10 --dry-run
 
-# Limit order with stop-loss
-python -m market_maven.cli trade AAPL BUY 10 --order-type LIMIT --limit-price 150.00 --stop-loss 140.00
-
-# Live trading (requires proper setup)
-python -m market_maven.cli trade AAPL BUY 10 --force
+# Simulate limit order with stop-loss
+python -m market_maven.cli trade AAPL BUY 10 --order-type LIMIT --limit-price 150.00 --stop-loss 140.00 --dry-run
 ```
 
-#### Portfolio Management
+### Portfolio Management
 ```bash
 # View portfolio summary
 python -m market_maven.cli portfolio
 
-# View specific position
+# Check position for specific stock
 python -m market_maven.cli position AAPL
-
-# View all positions
-python -m market_maven.cli position
 ```
 
-#### Interactive Mode
-```bash
-# Start interactive session
-python -m market_maven.cli interactive
-```
+## ⚙️ Configuration
 
-#### System Commands
-```bash
-# Health check
-python -m market_maven.cli health
+### Required Environment Variables
 
-# View configuration
-python -m market_maven.cli config
+| Variable | Description | Where to Get |
+|----------|-------------|--------------|
+| `ALPHA_VANTAGE_API_KEY` | Stock market data API key | [alphavantage.co](https://www.alphavantage.co/support/#api-key) |
+| `GOOGLE_API_KEY` | Google AI API key | [ai.google.dev](https://ai.google.dev/) |
 
-# Debug mode
-python -m market_maven.cli --debug analyze AAPL
-```
+### Optional Settings
 
-### Python API
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `ENABLE_DRY_RUN` | Safe simulation mode | `true` |
+| `MAX_POSITION_SIZE` | Maximum shares per trade | `100` |
+| `LOG_LEVEL` | Logging detail level | `INFO` |
 
-```python
-from market_maven import market_maven
+## 🛡️ Safety Features
 
-# Analyze a stock
-result = market_maven.analyze_stock(
-    symbol="AAPL",
-    analysis_type="comprehensive",
-    risk_tolerance="moderate",
-    investment_horizon="medium_term"
-)
+- **Dry-run mode**: All trades are simulated by default
+- **Position limits**: Maximum position size controls
+- **Risk management**: Automatic stop-loss and take-profit
+- **Rate limiting**: API request throttling
+- **Error handling**: Comprehensive error recovery
 
-# Execute a trade
-trade_result = market_maven.execute_trade(
-    symbol="AAPL",
-    action="BUY",
-    quantity=10,
-    order_type="MARKET",
-    dry_run=True
-)
-
-# Get portfolio summary
-portfolio = market_maven.get_portfolio_summary()
-
-# Health check
-health = market_maven.health_check()
-```
-
-## 📊 Monitoring
-
-### Metrics
-
-The agent exposes Prometheus metrics on port 8000 (configurable):
-
-- Tool execution metrics
-- Data fetch performance
-- Analysis confidence scores
-- Trading volume and success rates
-- Cache hit/miss ratios
-- System health indicators
-
-Access metrics at: `http://localhost:8000/metrics`
-
-### Logging
-
-Structured JSON logging with:
-- Correlation IDs for request tracing
-- Performance metrics
-- Error tracking
-- Audit trails for trading operations
-
-### Health Checks
+## 🐳 Docker Support
 
 ```bash
-# Check agent health
-python -m market_maven.cli health
+# Run with Docker
+docker-compose up -d
+
+# View logs
+docker-compose logs -f stock-agent
 ```
 
-Returns status of:
-- Agent components
-- Tool availability
-- API connectivity
-- Configuration validity
-
-## 🔒 Security
-
-### Risk Management
-- Position size limits
-- Stop-loss and take-profit automation
-- Portfolio risk assessment
-- Dry-run mode for testing
-
-### Data Security
-- API key encryption
-- Sensitive data masking in logs
-- Secure configuration management
-- Rate limiting and abuse prevention
-
-## 🧪 Testing
-
-### Dry-Run Mode
-All trading operations default to dry-run mode in development:
+## 📚 Development
 
 ```bash
-# This will simulate the trade
-python -m market_maven.cli trade AAPL BUY 10
+# Install development dependencies
+make install-dev
+
+# Run tests
+make test
+
+# Format code
+make format
 ```
 
-### Development Environment
-```bash
-# Set development environment
-export ENVIRONMENT=development
-export ENABLE_DRY_RUN=true
-```
+## ⚠️ Important Disclaimers
 
-## 📈 Analysis Types
-
-### Comprehensive Analysis
-- Technical indicators (RSI, MACD, SMA, EMA, Bollinger Bands)
-- Fundamental metrics (P/E, EPS, market cap, growth rates)
-- Market sentiment and news analysis
-- Risk assessment and price targets
-
-### Technical Analysis
-- Chart patterns and trends
-- Technical indicators and signals
-- Support and resistance levels
-- Momentum analysis
-
-### Fundamental Analysis
-- Financial statement analysis
-- Valuation metrics
-- Industry comparison
-- Growth prospects
-
-### Quick Analysis
-- Rapid assessment for immediate decisions
-- Key metrics and signals
-- Simple buy/hold/sell recommendation
-
-## 🚨 Risk Disclaimers
-
-**IMPORTANT**: This software is for educational and research purposes only.
-
-- **Not Financial Advice**: This agent does not provide financial advice
-- **Trading Risks**: All trading involves risk of loss
-- **No Guarantees**: Past performance does not guarantee future results
-- **Use at Your Own Risk**: Users are responsible for their trading decisions
-- **Test Thoroughly**: Always test in dry-run mode before live trading
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests
-5. Submit a pull request
+- **Not Financial Advice**: This tool is for educational and research purposes only
+- **Risk Warning**: All investments carry risk of loss
+- **Paper Trading**: Start with simulation mode before live trading
+- **Your Responsibility**: Always verify recommendations before acting
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 🆘 Support
+## 🤝 Support
 
-For support and questions:
-- Create an issue on GitHub
-- Check the documentation
-- Review the health check output
-- Enable debug logging for troubleshooting
+For issues and questions:
+1. Check the documentation in the code comments
+2. Review the configuration settings
+3. Enable debug mode: `python -m market_maven.cli --debug`
 
-## 🔄 Version History
+---
 
-### v1.0.0
-- Initial production release
-- Google ADK integration
-- Comprehensive analysis capabilities
-- Production-grade monitoring
-- CLI interface
-- Risk management features 
+**Remember**: Past performance does not guarantee future results. Always do your own research before making investment decisions.
