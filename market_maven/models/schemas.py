@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import List, Optional, Dict, Any, Union, Literal
 from decimal import Decimal
 from enum import Enum
-from pydantic import BaseModel, Field, validator, root_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from uuid import uuid4, UUID
 
 
@@ -112,13 +112,13 @@ class StockPrice(BaseModel):
     volume: int = Field(..., ge=0)
     adjusted_close: Optional[Decimal] = Field(None, decimal_places=4)
     
-    @validator('high')
+    @field_validator('high')
     def high_must_be_highest(cls, v, values):
         if 'low' in values and v < values['low']:
             raise ValueError('High must be greater than or equal to low')
         return v
     
-    @validator('open', 'close')
+    @field_validator('open', 'close')
     def prices_within_range(cls, v, values):
         if 'high' in values and 'low' in values:
             if not (values['low'] <= v <= values['high']):
@@ -163,7 +163,7 @@ class CompanyInfo(BaseModel):
     employees: Optional[int] = Field(None, ge=0)
     founded: Optional[int] = None
     
-    @validator('week_52_high')
+    @field_validator('week_52_high')
     def high_greater_than_low(cls, v, values):
         if v is not None and 'week_52_low' in values and values['week_52_low'] is not None:
             if v < values['week_52_low']:
@@ -234,7 +234,7 @@ class AnalysisResult(BaseStockModel):
     data_sources: List[str] = Field(default_factory=list)
     analysis_duration: Optional[float] = None  # seconds
     
-    @validator('confidence_score')
+    @field_validator('confidence_score')
     def confidence_matches_recommendation(cls, v, values):
         if 'recommendation' in values:
             rec = values['recommendation']
@@ -272,23 +272,19 @@ class TradeOrder(BaseStockModel):
     notes: Optional[str] = None
     dry_run: bool = False
     
-    @root_validator
-    def validate_order_prices(cls, values):
-        order_type = values.get('order_type')
-        limit_price = values.get('limit_price')
-        stop_price = values.get('stop_price')
-        
-        if order_type == OrderType.LIMIT and limit_price is None:
+    @model_validator(mode='after')
+    def validate_order_prices(self):
+        if self.order_type == OrderType.LIMIT and self.limit_price is None:
             raise ValueError('Limit price required for LIMIT orders')
         
-        if order_type == OrderType.STOP and stop_price is None:
+        if self.order_type == OrderType.STOP and self.stop_price is None:
             raise ValueError('Stop price required for STOP orders')
         
-        if order_type == OrderType.STOP_LIMIT:
-            if limit_price is None or stop_price is None:
+        if self.order_type == OrderType.STOP_LIMIT:
+            if self.limit_price is None or self.stop_price is None:
                 raise ValueError('Both limit and stop prices required for STOP_LIMIT orders')
         
-        return values
+        return self
 
 
 class TradeExecution(BaseModel):
@@ -343,7 +339,7 @@ class TradeResult(BaseStockModel):
     risk_checks_passed: bool = True
     risk_warnings: List[str] = Field(default_factory=list)
     
-    @validator('remaining_quantity')
+    @field_validator('remaining_quantity')
     def remaining_quantity_valid(cls, v, values):
         if 'requested_quantity' in values and 'filled_quantity' in values:
             expected = values['requested_quantity'] - values['filled_quantity']
@@ -420,16 +416,13 @@ class MarketData(BaseModel):
     spread: Optional[Decimal] = Field(None, ge=0)
     mid_price: Optional[Decimal] = Field(None, ge=0)
     
-    @root_validator
-    def calculate_derived_fields(cls, values):
-        bid = values.get('bid')
-        ask = values.get('ask')
+    @model_validator(mode='after')
+    def calculate_derived_fields(self):
+        if self.bid is not None and self.ask is not None:
+            self.spread = self.ask - self.bid
+            self.mid_price = (self.bid + self.ask) / 2
         
-        if bid is not None and ask is not None:
-            values['spread'] = ask - bid
-            values['mid_price'] = (bid + ask) / 2
-        
-        return values
+        return self
 
 
 class NewsItem(BaseModel):
