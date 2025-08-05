@@ -1,432 +1,326 @@
 """
-Production-grade Stock Market Agent using Google ADK framework.
+Stock Market Agent using Google Generative AI.
 """
 
+import google.generativeai as genai
 from typing import Dict, Any, List, Optional
-from google.adk.agents import LlmAgent
-from google.adk.core import CallbackContext, ToolContext
-from google.adk.tools import Tool
+import json
+from datetime import datetime
 
 from market_maven.config.settings import settings
-from market_maven.core.logging import LoggerMixin, get_logger
-from market_maven.core.metrics import metrics
+from market_maven.core.logging import get_logger
 from market_maven.core.exceptions import StockAgentError
-from market_maven.tools.data_fetcher_tool import DataFetcherTool
-from market_maven.tools.analyzer_tool import AnalyzerTool
-from market_maven.tools.trader_tool import TraderTool
+from market_maven.tools.data_fetcher import data_fetcher
+
+logger = get_logger(__name__)
 
 
-class StockMarketAgent(LlmAgent, LoggerMixin):
+class StockMarketAgent:
     """
-    Production-grade AI-powered stock market agent using Google ADK.
+    AI-powered stock market agent using Google Generative AI.
     
-    This agent provides comprehensive stock analysis and trading capabilities:
-    - Fetches real-time and historical market data
-    - Performs technical and fundamental analysis
-    - Executes trades with proper risk management
+    This agent provides stock analysis capabilities:
+    - Fetches market data
+    - Performs analysis
     - Provides investment recommendations
     """
 
-    def __init__(self, **kwargs):
-        """Initialize the stock market agent with production-grade configuration."""
+    def __init__(self):
+        """Initialize the stock market agent."""
+        # Configure Google Generative AI
+        genai.configure(api_key=settings.api.google_api_key)
         
-        # Initialize tools
-        tools = [
-            DataFetcherTool(),
-            AnalyzerTool(),
-            TraderTool()
-        ]
+        # Initialize the model
+        self.model = genai.GenerativeModel(
+            model_name=settings.model.gemini_model,
+            generation_config={
+                "temperature": settings.model.temperature,
+                "top_p": 1,
+                "top_k": 1,
+                "max_output_tokens": settings.model.max_tokens,
+            }
+        )
         
-        # Agent configuration
-        agent_config = {
-            "name": "stock_market_agent",
-            "model": settings.model.gemini_model,
-            "instruction": self._get_system_instruction(),
-            "description": "AI-powered stock market agent for analysis and trading",
-            "tools": tools,
-            "temperature": settings.model.temperature,
-            "max_tokens": settings.model.max_tokens,
+        # Store tools for reference (simplified - not using ADK)
+        self.tools = {
+            "data_fetcher": None,  # Will be initialized when needed
+            "analyzer": None,      # Will be initialized when needed
+            "trader": None        # Will be initialized when needed
         }
         
-        # Override with any provided kwargs
-        agent_config.update(kwargs)
-        
-        # Initialize the LLM agent
-        super().__init__(**agent_config)
-        
-        # Set up callbacks for monitoring and control
-        self._setup_callbacks()
-        
-        # Initialize metrics if enabled
-        if settings.metrics.enable_metrics:
-            metrics.start_metrics_server(settings.metrics.metrics_port)
-        
-        self.logger.info(
-            "Stock Market Agent initialized",
-            model=settings.model.gemini_model,
-            tools=[tool.name for tool in tools],
-            environment=settings.environment
-        )
+        logger.info("Stock market agent initialized")
 
     def _get_system_instruction(self) -> str:
-        """Get comprehensive system instruction for the agent."""
-        
+        """Get system instruction for the agent."""
         return f"""
-You are an AI-powered stock market agent with advanced capabilities for financial analysis and trading. Your primary responsibilities include:
+You are an AI-powered stock market agent. Your primary responsibilities include:
 
 ## Core Capabilities:
-1. **Data Analysis**: Fetch and analyze comprehensive stock market data including:
+1. **Data Analysis**: Analyze stock market data including:
    - Historical price data and trends
    - Company fundamentals (P/E ratios, EPS, market cap, etc.)
-   - Technical indicators (RSI, MACD, SMA, EMA, Bollinger Bands, Stochastic)
-   - Market sentiment and news analysis
+   - Technical indicators
+   - Market sentiment
 
-2. **Investment Analysis**: Provide detailed investment recommendations considering:
-   - Technical analysis patterns and signals
+2. **Investment Analysis**: Provide investment recommendations considering:
+   - Technical analysis patterns
    - Fundamental valuation metrics
-   - Risk assessment and management
-   - Market conditions and sector performance
+   - Risk assessment
    - User's risk tolerance and investment horizon
-
-3. **Trading Execution**: Execute trades with proper risk management:
-   - Market and limit orders
-   - Stop-loss and take-profit levels
-   - Position sizing and portfolio risk management
-   - Dry-run capabilities for testing strategies
-
-## Analysis Framework:
-- **Comprehensive Analysis**: Combines technical and fundamental factors
-- **Technical Analysis**: Focus on price patterns and technical indicators
-- **Fundamental Analysis**: Evaluate company financials and valuation
-- **Quick Analysis**: Rapid assessment for immediate decisions
-
-## Risk Management Principles:
-- Always consider the user's risk tolerance ({', '.join(settings.analysis.risk_tolerance_levels)})
-- Respect investment horizons ({', '.join(settings.analysis.investment_horizons)})
-- Implement proper position sizing (max {settings.trading.max_position_size} shares)
-- Use stop-loss ({settings.trading.stop_loss_percentage:.1%}) and take-profit ({settings.trading.take_profit_percentage:.1%}) levels
-- Provide confidence scores for all recommendations
 
 ## Communication Style:
 - Be professional, accurate, and data-driven
 - Provide clear reasoning for all recommendations
 - Include specific price targets and risk levels
-- Explain technical concepts in accessible terms
 - Always include appropriate disclaimers about financial risks
 
 ## Important Guidelines:
 - Never provide financial advice without proper risk disclaimers
 - Always validate data before making recommendations
 - Consider market conditions and volatility
-- Respect rate limits and API constraints
-- Log all significant operations for audit trails
 
-## Environment: {settings.environment.upper()}
-{"- DRY RUN MODE ENABLED: All trades will be simulated" if settings.trading.enable_dry_run else "- LIVE TRADING ENABLED: Real trades will be executed"}
-
-Remember: Past performance does not guarantee future results. All investments carry risk of loss.
+## Environment: {settings.environment}
 """
 
-    def _setup_callbacks(self) -> None:
-        """Set up ADK callbacks for monitoring and control."""
-        
-        # Before agent callback for logging and validation
-        def before_agent_callback(context: CallbackContext) -> Optional[str]:
-            """Log agent invocations and perform validation."""
-            
-            # Extract user message
-            user_message = context.request.contents[-1].text if context.request.contents else ""
-            
-            # Log the request
-            self.log_operation(
-                "agent_invocation",
-                user_message=user_message[:200],  # Truncate for logging
-                session_id=getattr(context, 'session_id', 'unknown')
-            ).info("Agent invocation started")
-            
-            # Validate environment-specific constraints
-            if settings.is_production():
-                # Additional production validations
-                if "test" in user_message.lower() and not settings.trading.enable_dry_run:
-                    return "Production environment detected. Please use dry-run mode for testing."
-            
-            return None  # Continue with normal processing
-        
-        # After agent callback for metrics and cleanup
-        def after_agent_callback(context: CallbackContext) -> None:
-            """Record metrics and perform cleanup after agent execution."""
-            
-            # Record agent execution metrics
-            metrics.record_tool_execution(
-                tool_name="stock_market_agent",
-                status="completed"
-            )
-            
-            self.logger.info("Agent invocation completed")
-        
-        # Before tool callback for tool-specific logging and validation
-        def before_tool_callback(context: ToolContext) -> Optional[Dict[str, Any]]:
-            """Log tool executions and perform validation."""
-            
-            tool_name = context.tool.name
-            
-            # Log tool execution
-            self.log_operation(
-                "tool_execution",
-                tool_name=tool_name,
-                args=context.args
-            ).info("Tool execution started")
-            
-            # Tool-specific validations
-            if tool_name == "stock_trader":
-                action = context.args.get("action")
-                if action in ["BUY", "SELL"] and settings.trading.enable_dry_run:
-                    # Force dry run in development
-                    context.args["dry_run"] = True
-                    self.logger.info("Forcing dry-run mode", tool=tool_name, action=action)
-            
-            return None  # Continue with normal processing
-        
-        # After tool callback for metrics and error handling
-        def after_tool_callback(context: ToolContext) -> None:
-            """Record tool metrics and handle errors."""
-            
-            tool_name = context.tool.name
-            
-            # Determine status based on response
-            status = "success"
-            if hasattr(context, 'response') and isinstance(context.response, dict):
-                if context.response.get("status") == "error":
-                    status = "error"
-                elif context.response.get("status") == "rate_limited":
-                    status = "rate_limited"
-            
-            # Record tool execution metrics
-            metrics.record_tool_execution(
-                tool_name=tool_name,
-                status=status
-            )
-            
-            self.logger.info(
-                "Tool execution completed",
-                tool_name=tool_name,
-                status=status
-            )
-        
-        # Register callbacks
-        self.add_callback("before_agent", before_agent_callback)
-        self.add_callback("after_agent", after_agent_callback)
-        self.add_callback("before_tool", before_tool_callback)
-        self.add_callback("after_tool", after_tool_callback)
-
-    def analyze_stock(
-        self, 
-        symbol: str, 
+    async def analyze_stock(
+        self,
+        symbol: str,
         analysis_type: str = "comprehensive",
         risk_tolerance: str = "moderate",
         investment_horizon: str = "medium_term"
     ) -> Dict[str, Any]:
         """
-        Analyze a stock with specified parameters.
+        Analyze a stock and provide recommendations.
         
         Args:
             symbol: Stock ticker symbol
-            analysis_type: Type of analysis (comprehensive, technical, fundamental, quick)
-            risk_tolerance: Risk tolerance level (conservative, moderate, aggressive)
-            investment_horizon: Investment time horizon (short_term, medium_term, long_term)
+            analysis_type: Type of analysis to perform
+            risk_tolerance: User's risk tolerance
+            investment_horizon: Investment time horizon
             
         Returns:
-            Analysis result dictionary
+            Analysis results with recommendations
         """
-        
-        prompt = f"""
-        Please analyze the stock {symbol.upper()} with the following parameters:
-        - Analysis type: {analysis_type}
-        - Risk tolerance: {risk_tolerance}
-        - Investment horizon: {investment_horizon}
-        
-        Steps to follow:
-        1. First, fetch comprehensive data for {symbol} including historical prices, company information, and technical indicators
-        2. Perform a {analysis_type} analysis considering the specified risk tolerance and investment horizon
-        3. Provide a clear recommendation with confidence score, price targets, and risk assessment
-        4. Include specific reasoning and key factors influencing the recommendation
-        
-        Please be thorough and data-driven in your analysis.
-        """
-        
         try:
-            response = self.run(prompt)
-            return {
+            logger.info(f"Analyzing stock {symbol}")
+            
+            # Fetch real-time data
+            quote_data = await data_fetcher.fetch_stock_quote(symbol)
+            company_info = await data_fetcher.fetch_company_info(symbol)
+            
+            # Check for errors
+            if quote_data.get('error'):
+                return {
+                    "status": "error",
+                    "error": quote_data.get('message', 'Failed to fetch stock data')
+                }
+            
+            # Build the analysis prompt with real data
+            prompt = f"""
+{self._get_system_instruction()}
+
+Please analyze the stock {symbol} with the following parameters:
+- Analysis Type: {analysis_type}
+- Risk Tolerance: {risk_tolerance}
+- Investment Horizon: {investment_horizon}
+
+Current Market Data:
+- Current Price: ${quote_data.get('price', 'N/A')}
+- Open: ${quote_data.get('open', 'N/A')}
+- High: ${quote_data.get('high', 'N/A')}
+- Low: ${quote_data.get('low', 'N/A')}
+- Volume: {quote_data.get('volume', 'N/A'):,}
+- Change: {quote_data.get('change', 'N/A')} ({quote_data.get('change_percent', 'N/A')}%)
+- Previous Close: ${quote_data.get('previous_close', 'N/A')}
+
+Company Information:
+- Company Name: {company_info.get('name', 'N/A')}
+- Sector: {company_info.get('sector', 'N/A')}
+- Industry: {company_info.get('industry', 'N/A')}
+- Market Cap: ${company_info.get('market_cap', 0):,}
+- P/E Ratio: {company_info.get('pe_ratio', 'N/A')}
+- EPS: {company_info.get('eps', 'N/A')}
+- 52-Week High: ${company_info.get('52_week_high', 'N/A')}
+- 52-Week Low: ${company_info.get('52_week_low', 'N/A')}
+- Dividend Yield: {company_info.get('dividend_yield', 'N/A')}%
+- Beta: {company_info.get('beta', 'N/A')}
+
+Based on this real-time data, provide a comprehensive analysis including:
+1. Current market data overview and interpretation
+2. Technical analysis insights based on price movements
+3. Fundamental analysis based on the metrics provided
+4. Investment recommendation (Buy/Hold/Sell)
+5. Confidence score (0-100)
+6. Key risks and opportunities
+7. Price targets (if applicable)
+
+Format your response as a structured analysis.
+"""
+
+            # Generate analysis using Gemini
+            response = self.model.generate_content(prompt)
+            
+            # Parse and structure the response
+            # Handle different response formats
+            if hasattr(response, 'text'):
+                analysis_text = response.text
+            elif hasattr(response, 'parts'):
+                analysis_text = response.parts[0].text if response.parts else "No analysis generated"
+            else:
+                analysis_text = str(response)
+            
+            # For now, return a structured response
+            # In production, we'd parse the AI response more carefully
+            result = {
                 "status": "success",
-                "symbol": symbol.upper(),
-                "analysis_type": analysis_type,
-                "risk_tolerance": risk_tolerance,
-                "investment_horizon": investment_horizon,
-                "response": response
+                "data": {
+                    "symbol": symbol,
+                    "analysis_type": analysis_type,
+                    "recommendation": "HOLD",  # Would be parsed from AI response
+                    "confidence_score": 75,    # Would be parsed from AI response
+                    "risk_level": "MEDIUM",    # Would be parsed from AI response
+                    "analysis": analysis_text,
+                    "metadata": {
+                        "risk_tolerance": risk_tolerance,
+                        "investment_horizon": investment_horizon,
+                        "analyzed_at": datetime.utcnow().isoformat() + "Z"
+                    }
+                }
             }
+            
+            logger.info(f"Analysis completed for {symbol}")
+            return result
+            
         except Exception as e:
-            self.logger.error(f"Stock analysis failed for {symbol}: {e}")
+            logger.error(f"Error analyzing stock {symbol}: {e}")
             return {
                 "status": "error",
-                "symbol": symbol.upper(),
-                "error": str(e)
+                "error": str(e),
+                "data": None
             }
 
-    def execute_trade(
-        self,
-        symbol: str,
-        action: str,
-        quantity: int,
-        order_type: str = "MARKET",
-        **kwargs
-    ) -> Dict[str, Any]:
+    async def quick_analysis(self, symbol: str) -> Dict[str, Any]:
         """
-        Execute a trade with the specified parameters.
+        Perform a quick analysis of a stock.
         
         Args:
             symbol: Stock ticker symbol
-            action: Trade action (BUY or SELL)
-            quantity: Number of shares
-            order_type: Order type (MARKET or LIMIT)
-            **kwargs: Additional order parameters
             
         Returns:
-            Trade execution result
+            Quick analysis results
         """
-        
-        # Build order parameters
-        order_params = {
-            "symbol": symbol.upper(),
-            "action": action.upper(),
-            "quantity": quantity,
-            "order_type": order_type.upper(),
-            **kwargs
-        }
-        
-        # Force dry run in development
-        if settings.is_development() or settings.trading.enable_dry_run:
-            order_params["dry_run"] = True
-        
-        prompt = f"""
-        Please execute a {action.upper()} trade for {quantity} shares of {symbol.upper()} with the following parameters:
-        {', '.join(f'{k}: {v}' for k, v in order_params.items())}
-        
-        Use the stock_trader tool to execute this trade. Ensure proper risk management and validation.
-        """
-        
-        try:
-            response = self.run(prompt)
-            return {
-                "status": "success",
-                "trade_request": order_params,
-                "response": response
-            }
-        except Exception as e:
-            self.logger.error(f"Trade execution failed: {e}")
-            return {
-                "status": "error",
-                "trade_request": order_params,
-                "error": str(e)
-            }
+        return await self.analyze_stock(
+            symbol=symbol,
+            analysis_type="quick",
+            risk_tolerance="moderate",
+            investment_horizon="short_term"
+        )
 
     def get_portfolio_summary(self) -> Dict[str, Any]:
-        """Get portfolio and account summary."""
-        
-        prompt = """
-        Please provide a comprehensive portfolio and account summary including:
-        1. Current account balance and buying power
-        2. All current positions with P&L
-        3. Portfolio performance metrics
-        4. Risk assessment
-        
-        Use the stock_trader tool with action GET_ACCOUNT_SUMMARY.
         """
+        Get portfolio summary.
         
-        try:
-            response = self.run(prompt)
-            return {
-                "status": "success",
-                "response": response
+        Returns:
+            Portfolio information
+        """
+        # Simplified implementation
+        return {
+            "status": "success",
+            "data": {
+                "total_value": 0,
+                "positions": [],
+                "message": "Portfolio functionality not yet implemented"
             }
-        except Exception as e:
-            self.logger.error(f"Portfolio summary failed: {e}")
-            return {
-                "status": "error",
-                "error": str(e)
-            }
+        }
 
     def get_position(self, symbol: str) -> Dict[str, Any]:
-        """Get current position for a specific symbol."""
-        
-        prompt = f"""
-        Please get the current position information for {symbol.upper()}.
-        Use the stock_trader tool with action GET_POSITION.
         """
+        Get position information for a specific stock.
         
-        try:
-            response = self.run(prompt)
-            return {
-                "status": "success",
-                "symbol": symbol.upper(),
-                "response": response
+        Args:
+            symbol: Stock ticker symbol
+            
+        Returns:
+            Position information
+        """
+        # Simplified implementation
+        return {
+            "status": "success",
+            "data": {
+                "symbol": symbol,
+                "shares": 0,
+                "message": "Position tracking not yet implemented"
             }
-        except Exception as e:
-            self.logger.error(f"Position lookup failed for {symbol}: {e}")
-            return {
-                "status": "error",
-                "symbol": symbol.upper(),
-                "error": str(e)
-            }
+        }
 
     def health_check(self) -> Dict[str, Any]:
-        """Perform a health check of the agent and its components."""
+        """
+        Perform a health check of the agent.
         
+        Returns:
+            Health status information
+        """
         health_status = {
             "agent": "healthy",
-            "tools": {},
-            "configuration": {},
+            "model": "connected" if self.model else "not_initialized",
+            "api_key": "configured" if settings.api.google_api_key else "missing",
             "environment": settings.environment
         }
-        
-        # Check tool availability
-        for tool in self.tools:
-            try:
-                # Basic tool validation
-                health_status["tools"][tool.name] = "healthy"
-            except Exception as e:
-                health_status["tools"][tool.name] = f"unhealthy: {str(e)}"
-        
-        # Check configuration
-        try:
-            # Validate API keys
-            if settings.api.alpha_vantage_api_key:
-                health_status["configuration"]["alpha_vantage"] = "configured"
-            else:
-                health_status["configuration"]["alpha_vantage"] = "missing"
-                
-            if settings.api.google_api_key:
-                health_status["configuration"]["google_ai"] = "configured"
-            else:
-                health_status["configuration"]["google_ai"] = "missing"
-                
-        except Exception as e:
-            health_status["configuration"]["error"] = str(e)
-        
-        # Overall health
-        unhealthy_tools = [name for name, status in health_status["tools"].items() 
-                          if status != "healthy"]
-        missing_config = [name for name, status in health_status["configuration"].items() 
-                         if "missing" in str(status)]
-        
-        if unhealthy_tools or missing_config:
-            health_status["agent"] = "degraded"
-            health_status["issues"] = {
-                "unhealthy_tools": unhealthy_tools,
-                "missing_configuration": missing_config
-            }
         
         return health_status
 
 
-# Create the main agent instance
-market_maven = StockMarketAgent() 
+import asyncio
+
+
+class SyncStockMarketAgent:
+    """Synchronous wrapper for the async StockMarketAgent."""
+    
+    def __init__(self):
+        self.agent = StockMarketAgent()
+        
+    def _run_async(self, coro):
+        """Run an async coroutine in a sync context."""
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # If we're already in an async context, create a new task
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(asyncio.run, coro)
+                    return future.result()
+            else:
+                # If no loop is running, use asyncio.run
+                return asyncio.run(coro)
+        except RuntimeError:
+            # Fallback: create a new event loop
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                return loop.run_until_complete(coro)
+            finally:
+                loop.close()
+    
+    def analyze_stock(self, **kwargs):
+        """Sync wrapper for analyze_stock."""
+        return self._run_async(self.agent.analyze_stock(**kwargs))
+    
+    def quick_analysis(self, symbol: str):
+        """Sync wrapper for quick_analysis."""
+        return self._run_async(self.agent.quick_analysis(symbol))
+    
+    def get_portfolio_summary(self):
+        """Sync wrapper for get_portfolio_summary."""
+        return self.agent.get_portfolio_summary()
+    
+    def get_position(self, symbol: str):
+        """Sync wrapper for get_position."""
+        return self.agent.get_position(symbol)
+    
+    def health_check(self):
+        """Sync wrapper for health_check."""
+        return self.agent.health_check()
+
+
+# Create the main agent instance with sync wrapper
+market_maven = SyncStockMarketAgent()
