@@ -17,7 +17,6 @@ from rich.json import JSON
 
 from market_maven.config.settings import settings
 from market_maven.core.logging import setup_logging, get_logger
-from market_maven.core.metrics import metrics
 from market_maven.core.database_init import db_manager
 from market_maven.agents.market_maven import market_maven
 
@@ -330,7 +329,14 @@ def quick(symbol: str) -> None:
             
             if result["status"] == "success":
                 console.print(f"\n[bold green]⚡ Quick Analysis: {symbol}[/bold green]")
-                console.print(Panel(result["response"], border_style="yellow"))
+                # Handle different response formats
+                if "data" in result and "analysis" in result["data"]:
+                    analysis_text = result["data"]["analysis"]
+                elif "response" in result:
+                    analysis_text = result["response"]
+                else:
+                    analysis_text = str(result)
+                console.print(Panel(analysis_text, border_style="yellow"))
             else:
                 console.print(f"[bold red]❌ Quick analysis failed: {result.get('error', 'Unknown error')}[/bold red]")
                 sys.exit(1)
@@ -596,15 +602,28 @@ def cleanup(days: int) -> None:
 def _display_analysis_result(result: Dict[str, Any]) -> None:
     """Display analysis results in a formatted way."""
     
-    symbol = result.get("symbol", "Unknown")
-    analysis_type = result.get("analysis_type", "Unknown")
+    # Handle different response formats
+    data = result.get("data", {})
+    
+    symbol = data.get("symbol", result.get("symbol", "Unknown"))
+    analysis_type = data.get("analysis_type", result.get("analysis_type", "Unknown"))
+    risk_tolerance = data.get("metadata", {}).get("risk_tolerance", result.get("risk_tolerance", "Unknown"))
+    investment_horizon = data.get("metadata", {}).get("investment_horizon", result.get("investment_horizon", "Unknown"))
     
     console.print(f"\n[bold green]📈 Analysis Results: {symbol}[/bold green]")
     console.print(f"[dim]Analysis Type: {analysis_type.title()}[/dim]")
-    console.print(f"[dim]Risk Tolerance: {result.get('risk_tolerance', 'Unknown').title()}[/dim]")
-    console.print(f"[dim]Investment Horizon: {result.get('investment_horizon', 'Unknown').replace('_', ' ').title()}[/dim]")
+    console.print(f"[dim]Risk Tolerance: {risk_tolerance.title()}[/dim]")
+    console.print(f"[dim]Investment Horizon: {investment_horizon.replace('_', ' ').title()}[/dim]")
     
-    console.print(Panel(result["response"], border_style="green"))
+    # Get the analysis text from the right location
+    if "data" in result and "analysis" in result["data"]:
+        analysis_text = result["data"]["analysis"]
+    elif "response" in result:
+        analysis_text = result["response"]
+    else:
+        analysis_text = "No analysis available"
+    
+    console.print(Panel(analysis_text, border_style="green"))
 
 
 def _display_order_summary(order_params: Dict[str, Any]) -> None:
