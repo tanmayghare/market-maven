@@ -5,7 +5,7 @@ Database connection and ORM setup for the stock agent.
 import os
 from typing import Optional, AsyncGenerator
 from contextlib import asynccontextmanager
-from sqlalchemy import create_engine, MetaData
+from sqlalchemy import create_engine, MetaData, text
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import declarative_base, sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -30,14 +30,16 @@ def get_database_url() -> str:
     """Get database URL from environment or settings."""
     return os.getenv(
         "DATABASE_URL",
-        f"postgresql://{settings.postgres.user}:{settings.postgres.password}@{settings.postgres.host}:{settings.postgres.port}/{settings.postgres.database}"
+        settings.database.sync_url
     )
 
 
 def get_async_database_url() -> str:
     """Get async database URL."""
-    url = get_database_url()
-    return url.replace("postgresql://", "postgresql+asyncpg://")
+    return os.getenv(
+        "ASYNC_DATABASE_URL",
+        settings.database.url
+    )
 
 
 def init_database() -> None:
@@ -47,21 +49,37 @@ def init_database() -> None:
     database_url = get_database_url()
     async_database_url = get_async_database_url()
     
-    # Synchronous engine
-    engine = create_engine(
-        database_url,
-        pool_pre_ping=True,
-        pool_recycle=300,
-        echo=settings.debug
-    )
+    # SQLite-specific engine configuration
+    if "sqlite" in database_url:
+        # For SQLite, use StaticPool to avoid connection issues
+        engine = create_engine(
+            database_url,
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+            echo=settings.database.echo or settings.debug
+        )
+    else:
+        # For other databases (future support)
+        engine = create_engine(
+            database_url,
+            pool_pre_ping=True,
+            pool_recycle=300,
+            echo=settings.database.echo or settings.debug
+        )
     
     # Asynchronous engine
-    async_engine = create_async_engine(
-        async_database_url,
-        pool_pre_ping=True,
-        pool_recycle=300,
-        echo=settings.debug
-    )
+    if "sqlite" in async_database_url:
+        async_engine = create_async_engine(
+            async_database_url,
+            echo=settings.database.echo or settings.debug
+        )
+    else:
+        async_engine = create_async_engine(
+            async_database_url,
+            pool_pre_ping=True,
+            pool_recycle=300,
+            echo=settings.database.echo or settings.debug
+        )
     
     # Session factories
     SessionLocal = sessionmaker(
@@ -133,7 +151,7 @@ def health_check() -> bool:
             init_database()
         
         with engine.connect() as conn:
-            conn.execute("SELECT 1")
+            conn.execute(text("SELECT 1"))
         return True
     except Exception as e:
         logger.error(f"Database health check failed: {e}")

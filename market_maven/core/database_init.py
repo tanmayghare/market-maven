@@ -87,12 +87,12 @@ class DatabaseManager:
         """Check if database has been initialized."""
         try:
             async with get_async_db() as db:
-                # Check if key tables exist
+                # Check if key tables exist (SQLite-compatible)
                 result = await db.execute(text("""
-                    SELECT table_name 
-                    FROM information_schema.tables 
-                    WHERE table_schema = 'public' 
-                    AND table_name IN ('stock_symbols', 'analysis_results', 'trade_orders')
+                    SELECT name 
+                    FROM sqlite_master 
+                    WHERE type='table' 
+                    AND name IN ('stock_symbols', 'analysis_results', 'trade_orders')
                 """))
                 tables = result.fetchall()
                 return len(tables) >= 3
@@ -178,10 +178,9 @@ class DatabaseManager:
                 
                 for table in required_tables:
                     result = await db.execute(text(f"""
-                        SELECT EXISTS (
-                            SELECT 1 FROM information_schema.tables 
-                            WHERE table_schema = 'public' AND table_name = '{table}'
-                        )
+                        SELECT COUNT(*) > 0
+                        FROM sqlite_master 
+                        WHERE type='table' AND name = '{table}'
                     """))
                     exists = result.scalar()
                     if not exists:

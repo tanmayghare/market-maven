@@ -5,7 +5,8 @@ Production-grade configuration settings for the stock agent.
 import os
 from pathlib import Path
 from typing import Optional, List, Dict, Any
-from pydantic import BaseSettings, Field, validator
+from pydantic import Field, field_validator, ConfigDict
+from pydantic_settings import BaseSettings
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -16,8 +17,8 @@ load_dotenv(dotenv_path=env_path)
 class APISettings(BaseSettings):
     """API configuration settings."""
     
-    alpha_vantage_api_key: str = Field(..., env='ALPHA_VANTAGE_API_KEY')
-    google_api_key: str = Field(..., env='GOOGLE_API_KEY')
+    alpha_vantage_api_key: str = Field(default="demo", env='ALPHA_VANTAGE_API_KEY')
+    google_api_key: str = Field(default="demo", env='GOOGLE_API_KEY')
     
     # API endpoints
     alpha_vantage_base_url: str = "https://www.alphavantage.co/query"
@@ -27,8 +28,7 @@ class APISettings(BaseSettings):
     alpha_vantage_requests_per_minute: int = 5
     alpha_vantage_requests_per_day: int = 500
     
-    class Config:
-        env_prefix = "API_"
+    model_config = ConfigDict(extra="allow")
 
 
 class IBKRSettings(BaseSettings):
@@ -43,8 +43,7 @@ class IBKRSettings(BaseSettings):
     reconnect_attempts: int = 3
     reconnect_delay: int = 5
     
-    class Config:
-        env_prefix = "IBKR_"
+    model_config = ConfigDict(env_prefix="IBKR_", extra="allow")
 
 
 class ModelSettings(BaseSettings):
@@ -58,8 +57,7 @@ class ModelSettings(BaseSettings):
     enable_streaming: bool = True
     enable_function_calling: bool = True
     
-    class Config:
-        env_prefix = "MODEL_"
+    model_config = ConfigDict(env_prefix="MODEL_", extra="allow")
 
 
 class AnalysisSettings(BaseSettings):
@@ -77,8 +75,7 @@ class AnalysisSettings(BaseSettings):
     enable_caching: bool = True
     cache_ttl_seconds: int = 300  # 5 minutes
     
-    class Config:
-        env_prefix = "ANALYSIS_"
+    model_config = ConfigDict(env_prefix="ANALYSIS_", extra="allow")
 
 
 class TradingSettings(BaseSettings):
@@ -97,14 +94,13 @@ class TradingSettings(BaseSettings):
     default_order_type: str = "MARKET"
     order_timeout_seconds: int = 30
     
-    @validator('stop_loss_percentage', 'take_profit_percentage')
+    @field_validator('stop_loss_percentage', 'take_profit_percentage')
     def validate_percentages(cls, v):
         if not 0 < v < 1:
             raise ValueError('Percentage must be between 0 and 1')
         return v
     
-    class Config:
-        env_prefix = "TRADING_"
+    model_config = ConfigDict(env_prefix="TRADING_", extra="allow")
 
 
 class LoggingSettings(BaseSettings):
@@ -118,8 +114,7 @@ class LoggingSettings(BaseSettings):
     enable_correlation_ids: bool = True
     log_sensitive_data: bool = False
     
-    class Config:
-        env_prefix = "LOG_"
+    model_config = ConfigDict(env_prefix="LOG_", extra="allow")
 
 
 class MetricsSettings(BaseSettings):
@@ -132,42 +127,32 @@ class MetricsSettings(BaseSettings):
     health_check_interval: int = 30
     enable_health_endpoint: bool = True
     
-    class Config:
-        env_prefix = "METRICS_"
+    model_config = ConfigDict(env_prefix="METRICS_", extra="allow")
 
 
-class PostgresSettings(BaseSettings):
-    """PostgreSQL database configuration settings."""
+class DatabaseSettings(BaseSettings):
+    """SQLite database configuration settings."""
     
-    host: str = Field(default="localhost", env='POSTGRES_HOST')
-    port: int = Field(default=5432, env='POSTGRES_PORT')
-    database: str = Field(default="marketmaven", env='POSTGRES_DB')
-    user: str = Field(default="marketmaven", env='POSTGRES_USER')
-    password: str = Field(..., env='POSTGRES_PASSWORD')
+    database_path: str = Field(default="market_maven.db", env='DATABASE_PATH')
+    echo: bool = Field(default=False, env='DATABASE_ECHO')
     
-    # Connection pool settings
+    # Connection pool settings (for future use with SQLite)
     pool_size: int = 5
     max_overflow: int = 10
     pool_timeout: int = 30
     
-    class Config:
-        env_prefix = "POSTGRES_"
+    @property
+    def url(self) -> str:
+        """Get SQLite connection URL."""
+        return f"sqlite+aiosqlite:///{self.database_path}"
+    
+    @property
+    def sync_url(self) -> str:
+        """Get synchronous SQLite connection URL."""
+        return f"sqlite:///{self.database_path}"
+    
+    model_config = ConfigDict(env_prefix="DATABASE_", extra="allow")
 
-
-class RedisSettings(BaseSettings):
-    """Redis configuration settings."""
-    
-    url: str = Field(default="redis://localhost:6379", env='REDIS_URL')
-    password: Optional[str] = Field(default=None, env='REDIS_PASSWORD')
-    db: int = Field(default=0, env='REDIS_DB')
-    
-    # Connection settings
-    socket_timeout: int = 5
-    socket_connect_timeout: int = 5
-    retry_on_timeout: bool = True
-    
-    class Config:
-        env_prefix = "REDIS_"
 
 
 class SecuritySettings(BaseSettings):
@@ -185,8 +170,7 @@ class SecuritySettings(BaseSettings):
     rate_limit_requests: int = 100
     rate_limit_window: int = 3600  # 1 hour
     
-    class Config:
-        env_prefix = "SECURITY_"
+    model_config = ConfigDict(env_prefix="SECURITY_", extra="allow")
 
 
 class Settings(BaseSettings):
@@ -197,23 +181,24 @@ class Settings(BaseSettings):
     debug: bool = Field(default=False, env='DEBUG')
     
     # Component settings
-    api: APISettings = APISettings()
-    ibkr: IBKRSettings = IBKRSettings()
-    model: ModelSettings = ModelSettings()
-    analysis: AnalysisSettings = AnalysisSettings()
-    trading: TradingSettings = TradingSettings()
-    logging: LoggingSettings = LoggingSettings()
-    metrics: MetricsSettings = MetricsSettings()
-    postgres: PostgresSettings = PostgresSettings()
-    redis: RedisSettings = RedisSettings()
-    security: SecuritySettings = SecuritySettings()
+    api: APISettings = Field(default_factory=APISettings)
+    ibkr: IBKRSettings = Field(default_factory=IBKRSettings)
+    model: ModelSettings = Field(default_factory=ModelSettings)
+    analysis: AnalysisSettings = Field(default_factory=AnalysisSettings)
+    trading: TradingSettings = Field(default_factory=TradingSettings)
+    logging: LoggingSettings = Field(default_factory=LoggingSettings)
+    metrics: MetricsSettings = Field(default_factory=MetricsSettings)
+    database: DatabaseSettings = Field(default_factory=DatabaseSettings)
+    security: SecuritySettings = Field(default_factory=SecuritySettings)
     
-    @validator('environment')
+    @field_validator('environment')
     def validate_environment(cls, v):
         allowed = ['development', 'staging', 'production']
         if v not in allowed:
             raise ValueError(f'Environment must be one of {allowed}')
         return v
+    
+    model_config = ConfigDict(extra="allow", env_file=".env", env_file_encoding="utf-8")
     
     def is_production(self) -> bool:
         """Check if running in production environment."""
@@ -223,9 +208,7 @@ class Settings(BaseSettings):
         """Check if running in development environment."""
         return self.environment == "development"
     
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
+
 
 
 # Global settings instance

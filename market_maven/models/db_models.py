@@ -9,14 +9,44 @@ from uuid import uuid4
 
 from sqlalchemy import (
     Column, String, Integer, Float, Numeric, Boolean, 
-    DateTime, Text, JSON, ForeignKey, Index, UniqueConstraint
+    DateTime, Text, JSON, ForeignKey, Index, UniqueConstraint, TypeDecorator, CHAR
 )
-from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship, backref
 from sqlalchemy.ext.hybrid import hybrid_property
+import uuid
 
 from market_maven.core.database import Base
 from sqlalchemy import Enum as SQLEnum
+
+
+# Custom UUID type that works with both PostgreSQL and SQLite
+class UUID(TypeDecorator):
+    """Platform-independent UUID type.
+    
+    Uses PostgreSQL's UUID type, otherwise uses CHAR(36) for other databases.
+    """
+    impl = CHAR(36)
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return value
+        elif dialect.name == 'postgresql':
+            return str(value)
+        else:
+            if isinstance(value, uuid.UUID):
+                return str(value)
+            else:
+                return str(uuid.UUID(value))
+
+    def process_result_value(self, value, dialect):
+        if value is None:
+            return value
+        else:
+            if not isinstance(value, uuid.UUID):
+                return uuid.UUID(value)
+            else:
+                return value
 
 # Define enums directly to avoid circular imports
 import enum
